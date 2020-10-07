@@ -14,7 +14,9 @@ from django.core.management.base import SystemCheckError
 from django.test import TransactionTestCase, skipUnlessDBFeature, testcases
 from django.test.runner import DiscoverRunner
 from django.test.testcases import connections_support_transactions
-from django.test.utils import captured_stderr, dependency_ordered
+from django.test.utils import (
+    captured_stderr, dependency_ordered, get_unique_databases_and_mirrors,
+)
 
 from .models import B, Person, Through
 
@@ -336,6 +338,29 @@ class SetupDatabasesTests(unittest.TestCase):
                 self.runner_instance.teardown_databases(old_config)
         mocked_db_creation.return_value.destroy_test_db.assert_called_once_with('dbname', 0, False)
 
+    def test_get_unique_databases_and_mirrors(self):
+        '''
+        get_unique_databases_and_mirrors() returns the aliases in an ordered list.
+        if the default alias is included it must be returned first as the first
+        alias will be used to migrate the test database.
+        '''
+        tested_connections = db.ConnectionHandler({
+            'other': {
+                'ENGINE': 'django.db.backends.dummy',
+                'NAME': 'dbname',
+            },
+            'default': {
+                'ENGINE': 'django.db.backends.dummy',
+                'NAME': 'dbname',
+            }
+        })
+
+        with mock.patch('django.test.utils.connections', new=tested_connections):
+            test_databases, _ = get_unique_databases_and_mirrors()
+            self.assertEqual(test_databases, {
+                ('', '', 'django.db.backends.dummy', 'test_dbname'): ('dbname', ['default', 'other'])
+            })
+
     def test_destroy_test_db_restores_db_name(self):
         tested_connections = db.ConnectionHandler({
             'default': {
@@ -358,8 +383,8 @@ class SetupDatabasesTests(unittest.TestCase):
         with mock.patch('django.db.backends.dummy.base.DatabaseWrapper.creation_class') as mocked_db_creation:
             with mock.patch('django.test.utils.connections', new=tested_connections):
                 self.runner_instance.setup_databases()
-        mocked_db_creation.return_value.create_test_db.assert_called_once_with(
-            verbosity=0, autoclobber=False, serialize=True, keepdb=False
+        mocked_db_creation.return_value.initialize_test_db.assert_called_once_with(
+            verbosity=0, serialize=True
         )
 
     def test_serialized_off(self):
@@ -372,8 +397,8 @@ class SetupDatabasesTests(unittest.TestCase):
         with mock.patch('django.db.backends.dummy.base.DatabaseWrapper.creation_class') as mocked_db_creation:
             with mock.patch('django.test.utils.connections', new=tested_connections):
                 self.runner_instance.setup_databases()
-        mocked_db_creation.return_value.create_test_db.assert_called_once_with(
-            verbosity=0, autoclobber=False, serialize=False, keepdb=False
+        mocked_db_creation.return_value.initialize_test_db.assert_called_once_with(
+            verbosity=0, serialize=False
         )
 
 
