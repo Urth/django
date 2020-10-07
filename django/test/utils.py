@@ -158,6 +158,7 @@ def setup_databases(verbosity, interactive, keepdb=False, debug_sql=False, paral
 
     old_names = []
 
+    # Create the database and patch all settings with the test database name.
     for db_name, aliases in test_databases.values():
         first_alias = None
         for alias in aliases:
@@ -172,14 +173,8 @@ def setup_databases(verbosity, interactive, keepdb=False, debug_sql=False, paral
                     autoclobber=not interactive,
                     keepdb=keepdb,
                     serialize=connection.settings_dict['TEST'].get('SERIALIZE', True),
+                    create_only=True,
                 )
-                if parallel > 1:
-                    for index in range(parallel):
-                        connection.creation.clone_test_db(
-                            suffix=str(index + 1),
-                            verbosity=verbosity,
-                            keepdb=keepdb,
-                        )
             # Configure all other connections as mirrors of the first one
             else:
                 connections[alias].creation.set_as_test_mirror(connections[first_alias].settings_dict)
@@ -188,6 +183,22 @@ def setup_databases(verbosity, interactive, keepdb=False, debug_sql=False, paral
     for alias, mirror_alias in mirrored_aliases.items():
         connections[alias].creation.set_as_test_mirror(
             connections[mirror_alias].settings_dict)
+
+    # Create/clone the tables after loading all test settings so data migrations
+    # cannot write to an unpatched connection by accident.
+    for db_name, aliases in test_databases.values():
+        alias = next(iter(aliases))
+        connection = connections[alias]
+        connection.creation.initialize_test_db(
+            verbosity=verbosity,
+            serialize=connection.settings_dict['TEST'].get('SERIALIZE', True))
+        if parallel > 1:
+            for index in range(parallel):
+                connection.creation.clone_test_db(
+                    suffix=str(index + 1),
+                    verbosity=verbosity,
+                    keepdb=keepdb,
+                )
 
     if debug_sql:
         for alias in connections:
@@ -270,9 +281,16 @@ def get_unique_databases_and_mirrors(aliases=None):
             # we only need to create the test database once.
             item = test_databases.setdefault(
                 connection.creation.test_db_signature(),
-                (connection.settings_dict['NAME'], set())
+                (connection.settings_dict['NAME'], [])
             )
-            item[1].add(alias)
+            # If the database is also the default database we have to put it
+            # first because data migrations will use the default alias by
+            # default and any DDL from the same migration has to be executed
+            # in the same transaction.
+            if alias == DEFAULT_DB_ALIAS:
+                item[1].insert(0, alias)
+            else:
+                item[1].append(alias)
 
             if 'DEPENDENCIES' in test_settings:
                 dependencies[alias] = test_settings['DEPENDENCIES']

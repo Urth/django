@@ -27,14 +27,11 @@ class BaseDatabaseCreation:
     def log(self, msg):
         sys.stderr.write(msg + os.linesep)
 
-    def create_test_db(self, verbosity=1, autoclobber=False, serialize=True, keepdb=False):
+    def create_test_db(self, verbosity=1, autoclobber=False, serialize=True, keepdb=False, create_only=False):
         """
         Create a test database, prompting the user for confirmation if the
         database already exists. Return the name of the test database created.
         """
-        # Don't import django.core.management if it isn't needed.
-        from django.core.management import call_command
-
         test_database_name = self._get_test_db_name()
 
         if verbosity >= 1:
@@ -57,6 +54,24 @@ class BaseDatabaseCreation:
         self.connection.close()
         settings.DATABASES[self.connection.alias]["NAME"] = test_database_name
         self.connection.settings_dict["NAME"] = test_database_name
+
+        if not create_only:
+            self.initialize_test_db(verbosity=verbosity, serialize=serialize)
+
+        # Ensure a connection for the side effect of initializing the test database.
+        self.connection.ensure_connection()
+
+        return test_database_name
+
+    def initialize_test_db(self, verbosity=1, serialize=True):
+        # Don't import django.core.management if it isn't needed.
+        from django.core.management import call_command
+
+        if verbosity >= 1:
+            test_database_name = self._get_test_db_name()
+            self.log('Initializing test database for alias %s...' % (
+                self._get_database_display_str(verbosity, test_database_name),
+            ))
 
         try:
             if self.connection.settings_dict['TEST']['MIGRATE'] is False:
@@ -89,17 +104,14 @@ class BaseDatabaseCreation:
 
         call_command('createcachetable', database=self.connection.alias)
 
-        # Ensure a connection for the side effect of initializing the test database.
-        self.connection.ensure_connection()
-
-        return test_database_name
-
     def set_as_test_mirror(self, primary_settings_dict):
         """
         Set this database up to be used in testing as a mirror of a primary
         database whose settings are given.
         """
-        self.connection.settings_dict['NAME'] = primary_settings_dict['NAME']
+        self.connection.settings_dict["NAME"] = primary_settings_dict['NAME']
+        if self.connection.alias in settings.DATABASES:
+            settings.DATABASES[self.connection.alias]["NAME"] = primary_settings_dict['NAME']
 
     def serialize_db_to_string(self):
         """

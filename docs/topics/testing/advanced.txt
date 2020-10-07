@@ -748,7 +748,7 @@ utility methods in the ``django.test.utils`` module.
 The creation module of the database backend also provides some utilities that
 can be useful during testing.
 
-.. function:: create_test_db(verbosity=1, autoclobber=False, serialize=True, keepdb=False)
+.. function:: create_test_db(verbosity=1, autoclobber=False, serialize=True, keepdb=False, create_only=False)
 
     Creates a new test database and runs ``migrate`` against it.
 
@@ -764,12 +764,6 @@ can be useful during testing.
     * If autoclobber is ``True``, the database will be destroyed
       without consulting the user.
 
-    ``serialize`` determines if Django serializes the database into an
-    in-memory JSON string before running tests (used to restore the database
-    state between tests if you don't have transactions). You can set this to
-    ``False`` to speed up creation time if you don't have any test classes
-    with :ref:`serialized_rollback=True <test-case-serialized-rollback>`.
-
     If you are using the default test runner, you can control this with the
     the :setting:`SERIALIZE <TEST_SERIALIZE>` entry in the :setting:`TEST
     <DATABASE-TEST>` dictionary.
@@ -780,11 +774,31 @@ can be useful during testing.
     a new database will be created, prompting the user to remove
     the existing one, if present.
 
+    ``serialize`` has the same behavior as in ``initialize_test_db``.
+
+    ``create_only`` determine if the database should be initialized after
+    creating the database or that the caller will perform this step. You
+    can set this to ``True`` if a migration depends on multiple databases
+    and requires all test databases to exist and all settings to be updated.
+
     Returns the name of the test database that it created.
 
     ``create_test_db()`` has the side effect of modifying the value of
     :setting:`NAME` in :setting:`DATABASES` to match the name of the test
     database.
+
+.. function:: initialize_test_db(verbosity=1, serialize=True)
+
+    Initialize the database which is required after running
+    ``create_test_db(create_only=True)``.
+
+    ``verbosity`` has the same behavior as in ``run_tests()``.
+
+    ``serialize`` determines if Django serializes the database into an
+    in-memory JSON string before running tests (used to restore the database
+    state between tests if you don't have transactions). You can set this to
+    ``False`` to speed up creation time if you don't have any test classes
+    with :ref:`serialized_rollback=True <test-case-serialized-rollback>`.
 
 .. function:: destroy_test_db(old_database_name, verbosity=1, keepdb=False)
 
